@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PDF 格式转换器</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #1a1b23; --card: #21222d; --border: #2e2f3d;
+  --text: #e4e5ec; --text-dim: #8b8d9e; --accent: #6c8cff;
+  --success: #4ade80; --danger: #f87171; --radius: 12px;
+}
+body {
+  font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; display: flex; justify-content: center; padding: 40px 20px;
+}
+.app { width: 100%; max-width: 900px; }
+h1 { text-align: center; font-size: 1.6rem; margin-bottom: 8px; }
+.sub { text-align: center; color: var(--text-dim); font-size: 0.85rem; margin-bottom: 32px; }
+
+/* ── 上传区 ── */
+.upload-box {
+  border: 2px dashed var(--border); border-radius: var(--radius);
+  padding: 40px 24px; text-align: center; cursor: pointer; transition: all 0.2s;
+  margin-bottom: 20px; position: relative;
+}
+.upload-box:hover, .upload-box.active { border-color: var(--accent); background: var(--card); }
+.upload-box input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.upload-box .icon { font-size: 2.5rem; margin-bottom: 10px; }
+.upload-box .hint { color: var(--text-dim); font-size: 0.9rem; }
+.upload-box .hint strong { color: var(--accent); }
+.upload-box .filename { color: var(--accent); font-size: 0.95rem; margin-top: 8px; font-weight: 600; }
+
+/* ── 进度 ── */
+.progress { display: none; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+.progress.show { display: block; }
+.progress .stages { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.progress .stage-tag {
+  padding: 6px 14px; border-radius: 20px; font-size: 0.8rem;
+  border: 1px solid var(--border); color: var(--text-dim); opacity: 0.5;
+}
+.progress .stage-tag.on { opacity: 1; border-color: var(--accent); color: var(--accent); background: rgba(108,140,255,0.08); }
+.progress .stage-tag.ok { opacity: 0.7; border-color: var(--success); color: var(--success); background: rgba(74,222,128,0.06); }
+.progress .detail { font-size: 0.88rem; color: var(--text-dim); }
+
+/* ── 结果 ── */
+.result { display: none; }
+.result.show { display: block; }
+.result .head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.result .title { font-weight: 600; }
+.result .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn {
+  padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text); font-size: 0.82rem;
+  cursor: pointer; text-decoration: none; font-weight: 500; transition: all 0.15s;
+}
+.btn:hover { border-color: var(--accent); background: rgba(108,140,255,0.08); }
+.btn.go { background: var(--accent); border-color: var(--accent); color: #fff; }
+.preview {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  max-height: 500px; overflow-y: auto; padding: 20px;
+  font-size: 0.88rem; line-height: 1.7; white-space: pre-wrap;
+  font-family: 'Cascadia Code', 'Microsoft YaHei', monospace;
+}
+
+.error { display: none; padding: 12px 16px; border: 1px solid var(--danger); border-radius: var(--radius); color: var(--danger); background: rgba(248,113,113,0.08); margin-top: 14px; font-size: 0.88rem; }
+.error.show { display: block; }
+
+.pipeline { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 40px; color: var(--text-dim); font-size: 0.78rem; flex-wrap: wrap; }
+.pipeline span { background: var(--card); border: 1px solid var(--border); padding: 5px 12px; border-radius: 20px; }
+.pipeline .ar { background: none; border: none; padding: 0; color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>PDF 格式转换器</h1>
+  <p class="sub">上传 PDF → Markdown → 再转 Word / PPT / HTML</p>
+
+  <!-- 上传 -->
+  <label class="upload-box" id="uploadBox">
+    <input type="file" accept=".pdf" id="fileInput" />
+    <div class="icon">📤</div>
+    <div class="hint" id="upHint">拖拽 PDF 到此处，或 <strong>点击选择文件</strong></div>
+    <div class="filename" id="upName"></div>
+  </label>
+
+  <!-- 进度 -->
+  <div class="progress" id="progress">
+    <div class="stages" id="stages">
+      <span class="stage-tag">加载模型</span>
+      <span class="stage-tag">解析文档</span>
+      <span class="stage-tag">生成 Markdown</span>
+      <span class="stage-tag">提取图片</span>
+    </div>
+    <div class="detail" id="detail"></div>
+  </div>
+
+  <!-- 错误 -->
+  <div class="error" id="error"></div>
+
+  <!-- 结果 -->
+  <div class="result" id="result">
+    <div class="head">
+      <span class="title" id="resTitle"></span>
+      <div class="btns">
+        <a class="btn go" id="btnMd">⬇ Markdown</a>
+        <a class="btn go" id="btnZip">📦 MD + 图片</a>
+        <a class="btn" id="btnDocx">⬇ Word</a>
+        <a class="btn" id="btnPptx">⬇ PPT</a>
+        <a class="btn" id="btnHtml">⬇ HTML</a>
+      </div>
+    </div>
+    <div class="preview" id="preview"></div>
+  </div>
+
+  <!-- 底部 -->
+  <div class="pipeline">
+    <span>PDF</span><span class="ar">→</span>
+    <span>Docling 解析</span><span class="ar">→</span>
+    <span>Markdown</span><span class="ar">→</span>
+    <span>Word / PPT / HTML</span>
+  </div>
+</div>
+
+<script>
+const STAGES = ['loading','parsing','markdown','images'];
+const el = (id) => document.getElementById(id);
+
+const fileInput = el('fileInput');
+const uploadBox = el('uploadBox');
+const upHint = el('upHint');
+const upName = el('upName');
+const progress = el('progress');
+const stages = el('stages');
+const detail = el('detail');
+const errorBox = el('error');
+const result = el('result');
+const resTitle = el('resTitle');
+const preview = el('preview');
+const btnMd = el('btnMd');
+const btnZip = el('btnZip');
+const btnDocx = el('btnDocx');
+const btnPptx = el('btnPptx');
+const btnHtml = el('btnHtml');
+
+let sid = null;
+let polling = null;
+
+// ── 上传 ──
+uploadBox.addEventListener('dragover', e => { e.preventDefault(); uploadBox.classList.add('active'); });
+uploadBox.addEventListener('dragleave', () => uploadBox.classList.remove('active'));
+uploadBox.addEventListener('drop', e => {
+  e.preventDefault(); uploadBox.classList.remove('active');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type === 'application/pdf') startUpload(f);
+});
+
+fileInput.addEventListener('change', () => {
+  const f = fileInput.files[0];
+  if (f) startUpload(f);
+});
+
+function startUpload(file) {
+  if (polling) { clearTimeout(polling); polling = null; }
+
+  // 显示文件名
+  const mb = (file.size / 1024 / 1024).toFixed(1);
+  upHint.style.display = 'none';
+  upName.textContent = `${file.name}（${mb} MB）`;
+
+  // 重置 UI
+  result.classList.remove('show');
+  errorBox.classList.remove('show');
+  progress.classList.add('show');
+  detail.textContent = '准备中...';
+  STAGES.forEach((s,i) => {
+    stages.children[i].className = 'stage-tag' + (i === 0 ? ' on' : '');
+  });
+
+  // 发送
+  const fd = new FormData();
+  fd.append('pdf', file);
+
+  fetch('/upload', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) throw new Error(data.error);
+      sid = data.sid;
+      if (data.cached) {
+        // 缓存命中
+        STAGES.forEach((s,i) => stages.children[i].className = 'stage-tag ok');
+        detail.textContent = '缓存命中，秒出结果！';
+        setTimeout(() => progress.classList.remove('show'), 800);
+        fetchResult();
+      } else {
+        poll();
+      }
+    })
+    .catch(err => {
+      showError('上传失败：' + err.message);
+      resetUpload();
+    });
+}
+
+// ── 轮询 ──
+function poll() {
+  if (!sid) return;
+  fetch('/progress/' + sid)
+    .then(r => r.json())
+    .then(p => {
+      if (p.error) { showError(p.error); resetUpload(); return; }
+
+      const idx = STAGES.indexOf(p.stage);
+      for (let i = 0; i < STAGES.length; i++) {
+        const c = stages.children[i].classList;
+        c.remove('on', 'ok');
+        if (i < idx) c.add('ok');
+        else if (i === idx && !p.done) c.add('on');
+      }
+
+      if (p.done) {
+        for (let i = 0; i < STAGES.length; i++) stages.children[i].className = 'stage-tag ok';
+        detail.textContent = '转换完成！';
+        setTimeout(() => progress.classList.remove('show'), 800);
+        fetchResult();
+      } else {
+        detail.textContent = p.detail;
+        polling = setTimeout(poll, 600);
+      }
+    })
+    .catch(err => {
+      showError('进度查询失败：' + err.message);
+      resetUpload();
+    });
+}
+
+// ── 获取结果 ──
+function fetchResult() {
+  fetch('/result/' + sid)
+    .then(r => r.json())
+    .then(data => {
+      result.classList.add('show');
+      resTitle.textContent = `${data.filename} — ${data.mdLength.toLocaleString()} 字符`;
+      preview.textContent = data.mdPreview;
+      if (data.mdLength > 3000) preview.textContent += '\n\n... （下载查看完整内容）';
+
+      btnMd.href = '/download/' + sid + '/md';
+      btnDocx.href = '/download/' + sid + '/docx';
+      btnPptx.href = '/download/' + sid + '/pptx';
+      btnHtml.href = '/download/' + sid + '/html';
+
+      if (data.imgCount > 0) {
+        btnZip.href = '/download-zip/' + sid;
+        btnZip.style.display = '';
+      } else {
+        btnZip.style.display = 'none';
+      }
+
+      resetUpload();
+    })
+    .catch(err => showError('获取结果失败：' + err.message));
+}
+
+function showError(msg) {
+  errorBox.textContent = msg;
+  errorBox.classList.add('show');
+  progress.classList.remove('show');
+}
+
+function resetUpload() {
+  upHint.style.display = '';
+  upName.textContent = '';
+  fileInput.value = '';
+}
+</script>
+</body>
+</html>
