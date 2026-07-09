@@ -17,15 +17,20 @@ PDF → Markdown / HTML / JSON / 纯文本，一站式在线转换工具。
 
 ## 快速开始
 
+### Docker（推荐）
+
 ```bash
-# 安装依赖
+docker build -t pdf-converter .
+docker run -p 5000:5000 pdf-converter
+```
+
+浏览器打开 `http://localhost:5000`。
+
+### 本地运行
+
+```bash
 pip install -r requirements.txt
-
-# 启动服务
 python server.py
-
-# 浏览器打开
-http://localhost:5000
 ```
 
 ## 依赖
