@@ -1,7 +1,8 @@
 FROM python:3.12-slim
 
-# 系统依赖：pandoc
-RUN apt-get update && apt-get install -y --no-install-recommends pandoc \
+# 系统依赖：pandoc + tesseract OCR
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pandoc tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
